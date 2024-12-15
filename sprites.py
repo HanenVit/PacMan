@@ -7,9 +7,11 @@ class PacMan(pygame.sprite.Sprite):
         super().__init__()
         self.x = x
         self.y = y
-        self.radius = 15
+        self.radius = 12
         self.direction = 0  # Угол в градусах
         self.speed = 4
+        self.dx = 0  # Добавляем переменные для движения
+        self.dy = 0
         self.mouth_angle = 0
         self.mouth_change = 5
         self.powered_up = False
@@ -18,14 +20,29 @@ class PacMan(pygame.sprite.Sprite):
                               self.radius*2, self.radius*2)
 
     def handle_input(self, key):
-        if key == pygame.K_RIGHT:
-            self.direction = 0
-        elif key == pygame.K_LEFT:
-            self.direction = 180
+        if key == pygame.K_LEFT:
+            self.dx = -self.speed
+            self.dy = 0
+        elif key == pygame.K_RIGHT:
+            self.dx = self.speed
+            self.dy = 0
         elif key == pygame.K_UP:
-            self.direction = 90
+            self.dx = 0
+            self.dy = -self.speed
         elif key == pygame.K_DOWN:
-            self.direction = 270
+            self.dx = 0
+            self.dy = self.speed
+
+    def handle_key_up(self, key):
+        # Останавливаем движение при отпускании соответствующей клавиши
+        if key == pygame.K_LEFT and self.dx < 0:
+            self.dx = 0
+        elif key == pygame.K_RIGHT and self.dx > 0:
+            self.dx = 0
+        elif key == pygame.K_UP and self.dy < 0:
+            self.dy = 0
+        elif key == pygame.K_DOWN and self.dy > 0:
+            self.dy = 0
 
     def update(self, maze):
         # Анимация рта
@@ -33,20 +50,64 @@ class PacMan(pygame.sprite.Sprite):
         if self.mouth_angle >= 45 or self.mouth_angle <= 0:
             self.mouth_change = -self.mouth_change
 
-        # Движение
-        rad = math.radians(self.direction)
-        new_x = self.x + math.cos(rad) * self.speed
-        new_y = self.y - math.sin(rad) * self.speed
+        # Движение с использованием dx и dy
+        new_x = self.x + self.dx
+        new_y = self.y + self.dy
 
-        # Проверка столкновений со стенами
+        # Проверяем границы игрового поля
+        if new_x - self.radius < 0:
+            new_x = self.radius
+        elif new_x + self.radius > 900:  # WINDOW_WIDTH
+            new_x = 900 - self.radius
+        
+        if new_y - self.radius < 0:
+            new_y = self.radius
+        elif new_y + self.radius > 600:  # WINDOW_HEIGHT
+            new_y = 600 - self.radius
+
+        # Обновляем направление для анимации
+        if self.dx != 0 or self.dy != 0:
+            self.direction = math.degrees(math.atan2(-self.dy, self.dx))
+
+        # ��роверяем столкновения отдельно по X и Y
+        can_move_x = True
+        test_rect_x = pygame.Rect(new_x - self.radius, self.y - self.radius,
+                               self.radius * 2, self.radius * 2)
         grid_x = int(new_x // 30)
+        grid_y = int(self.y // 30)
+        
+        # Проверяем соседние клетки по X
+        for check_x in [grid_x - 1, grid_x, grid_x + 1]:
+            if 0 <= check_x < len(maze[0]):
+                if maze[grid_y][check_x] == 1:
+                    wall_rect = pygame.Rect(check_x * 30, grid_y * 30, 30, 30)
+                    if test_rect_x.colliderect(wall_rect):
+                        can_move_x = False
+                        break
+
+        # Затем пробуем двигаться по Y
+        can_move_y = True
+        test_rect_y = pygame.Rect(self.x - self.radius, new_y - self.radius,
+                               self.radius * 2, self.radius * 2)
+        grid_x = int(self.x // 30)
         grid_y = int(new_y // 30)
         
-        if 0 <= grid_x < len(maze[0]) and 0 <= grid_y < len(maze):
-            if maze[grid_y][grid_x] != 1:
-                self.x = new_x
-                self.y = new_y
-                self.rect.center = (self.x, self.y)
+        # Проверяем соседние клетки по Y
+        for check_y in [grid_y - 1, grid_y, grid_y + 1]:
+            if 0 <= check_y < len(maze):
+                if maze[check_y][grid_x] == 1:
+                    wall_rect = pygame.Rect(grid_x * 30, check_y * 30, 30, 30)
+                    if test_rect_y.colliderect(wall_rect):
+                        can_move_y = False
+                        break
+
+        # Применяем движение только по разрешенным осям
+        if can_move_x:
+            self.x = new_x
+        if can_move_y:
+            self.y = new_y
+
+        self.rect.center = (self.x, self.y)
 
         # Обработка режима энергетика
         if self.powered_up:
@@ -78,7 +139,7 @@ class Ghost(pygame.sprite.Sprite):
         self.x = x
         self.y = y
         self.speed = speed
-        self.radius = 15
+        self.radius = 12
         self.color = random.choice([(255, 0, 0), (255, 182, 255),
                                   (0, 255, 255), (255, 182, 85)])
         self.rect = pygame.Rect(x-self.radius, y-self.radius,
@@ -99,22 +160,100 @@ class Ghost(pygame.sprite.Sprite):
         new_x = self.x + math.cos(rad) * self.speed
         new_y = self.y + math.sin(rad) * self.speed
 
-        # Проверка столкновений
+        # Проверяем границы игрового поля
+        if new_x - self.radius < 0:
+            new_x = self.radius
+        elif new_x + self.radius > 900:  # WINDOW_WIDTH
+            new_x = 900 - self.radius
+        
+        if new_y - self.radius < 0:
+            new_y = self.radius
+        elif new_y + self.radius > 600:  # WINDOW_HEIGHT
+            new_y = 600 - self.radius
+
+        # Проверяем столкновения отдельно по X и Y
+        can_move_x = True
+        test_rect_x = pygame.Rect(new_x - self.radius, self.y - self.radius,
+                               self.radius * 2, self.radius * 2)
         grid_x = int(new_x // 30)
+        grid_y = int(self.y // 30)
+        
+        for check_x in [grid_x - 1, grid_x, grid_x + 1]:
+            if 0 <= check_x < len(maze[0]):
+                if maze[grid_y][check_x] == 1:
+                    wall_rect = pygame.Rect(check_x * 30, grid_y * 30, 30, 30)
+                    if test_rect_x.colliderect(wall_rect):
+                        can_move_x = False
+                        break
+
+        can_move_y = True
+        test_rect_y = pygame.Rect(self.x - self.radius, new_y - self.radius,
+                               self.radius * 2, self.radius * 2)
+        grid_x = int(self.x // 30)
         grid_y = int(new_y // 30)
         
-        if 0 <= grid_x < len(maze[0]) and 0 <= grid_y < len(maze):
-            if maze[grid_y][grid_x] != 1:
-                self.x = new_x
-                self.y = new_y
-                self.rect.center = (self.x, self.y)
-            else:
-                self.direction = random.choice([0, 90, 180, 270])
+        for check_y in [grid_y - 1, grid_y, grid_y + 1]:
+            if 0 <= check_y < len(maze):
+                if maze[check_y][grid_x] == 1:
+                    wall_rect = pygame.Rect(grid_x * 30, check_y * 30, 30, 30)
+                    if test_rect_y.colliderect(wall_rect):
+                        can_move_y = False
+                        break
 
-    def reset_position(self):
-        self.x = 450
-        self.y = 300
+        # Если не можем двигаться, меняем направление
+        if not (can_move_x or can_move_y):
+            self.direction = random.choice([0, 90, 180, 270])
+        else:
+            if can_move_x:
+                self.x = new_x
+            if can_move_y:
+                self.y = new_y
+
         self.rect.center = (self.x, self.y)
+
+    def reset_position(self, maze):
+        max_attempts = 100
+        attempts = 0
+        
+        while attempts < max_attempts:
+            x = random.randint(1, len(maze[0]) - 2)
+            y = random.randint(1, len(maze) - 2)
+            
+            if maze[y][x] == 0:
+                # Проверяем горизонтальный проход
+                if (x > 0 and x < len(maze[0])-1 and 
+                    maze[y][x-1] == 0 and maze[y][x+1] == 0):
+                    self.x = x * 30 + 15
+                    self.y = y * 30 + 15
+                    self.rect.center = (self.x, self.y)
+                    return
+                
+                # Проверяем вертикальный проход
+                if (y > 0 and y < len(maze)-1 and 
+                    maze[y-1][x] == 0 and maze[y+1][x] == 0):
+                    self.x = x * 30 + 15
+                    self.y = y * 30 + 15
+                    self.rect.center = (self.x, self.y)
+                    return
+            
+            attempts += 1
+        
+        # Если не нашли идеальную позицию, ищем любой проход
+        for y in range(1, len(maze) - 1):
+            for x in range(1, len(maze[0]) - 1):
+                if maze[y][x] == 0:
+                    if (x > 0 and x < len(maze[0])-1 and 
+                        maze[y][x-1] == 0 and maze[y][x+1] == 0):
+                        self.x = x * 30 + 15
+                        self.y = y * 30 + 15
+                        self.rect.center = (self.x, self.y)
+                        return
+                    if (y > 0 and y < len(maze)-1 and 
+                        maze[y-1][x] == 0 and maze[y+1][x] == 0):
+                        self.x = x * 30 + 15
+                        self.y = y * 30 + 15
+                        self.rect.center = (self.x, self.y)
+                        return
 
     def draw(self, screen):
         # Рисуем тело призрака

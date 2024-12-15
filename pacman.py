@@ -46,18 +46,58 @@ class Game:
 
     def reset_game(self):
         self.maze = generate_maze(30, 20)  # Размер лабиринта
-        self.pacman = PacMan(TILE_SIZE * 1, TILE_SIZE * 1)
+        
+        # Находим безопасную начальную позицию для Пакмана
+        pacman_pos = self.find_safe_position()
+        self.pacman = PacMan(pacman_pos[0], pacman_pos[1])  # Убираем дополнительные вычисления
+        
         self.ghosts = []
         self.dots = []
         self.power_pellets = []
         
-        # Создаем призраков (количество зависит от уровня)
+        # Создаем призраков в безопасных позициях
         for i in range(min(self.level, 4)):
-            ghost = Ghost(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, 1 + self.level * 0.2)
+            ghost_pos = self.find_safe_position()
+            ghost = Ghost(ghost_pos[0], ghost_pos[1],  # Убираем дополнительные вычисления
+                         1 + self.level * 0.2)
             self.ghosts.append(ghost)
         
         # Размещаем точки и энергетики
         self.place_dots_and_pellets()
+
+    def find_safe_position(self):
+        """Находит безопасную позицию в центре прохода"""
+        max_attempts = 100
+        attempts = 0
+        
+        while attempts < max_attempts:
+            x = random.randint(1, len(self.maze[0]) - 2)
+            y = random.randint(1, len(self.maze) - 2)
+            
+            if self.maze[y][x] == 0:
+                # Проверяем горизонтальный проход
+                if (x > 0 and x < len(self.maze[0])-1 and 
+                    self.maze[y][x-1] == 0 and self.maze[y][x+1] == 0):
+                    # Возвращаем координаты в пикселях
+                    return (x * TILE_SIZE + TILE_SIZE//2, y * TILE_SIZE + TILE_SIZE//2)
+                
+                # Проверяем вертикальный проход
+                if (y > 0 and y < len(self.maze)-1 and 
+                    self.maze[y-1][x] == 0 and self.maze[y+1][x] == 0):
+                    # Возвращаем координаты в пикселях
+                    return (x * TILE_SIZE + TILE_SIZE//2, y * TILE_SIZE + TILE_SIZE//2)
+            
+            attempts += 1
+        
+        # Если не нашли идеальную позицию, ищем любой проход
+        for y in range(1, len(self.maze) - 1):
+            for x in range(1, len(self.maze[0]) - 1):
+                if self.maze[y][x] == 0:
+                    # Возвращаем координаты в пикселях
+                    return (x * TILE_SIZE + TILE_SIZE//2, y * TILE_SIZE + TILE_SIZE//2)
+        
+        # Если вообще ничего не нашли
+        return (TILE_SIZE + TILE_SIZE//2, TILE_SIZE + TILE_SIZE//2)
 
     def place_dots_and_pellets(self):
         for y in range(len(self.maze)):
@@ -83,6 +123,8 @@ class Game:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
                 self.pacman.handle_input(event.key)
+            elif event.type == pygame.KEYUP:  # Добавляем обработку отпускания клавиши
+                self.pacman.handle_key_up(event.key)
 
     def update(self):
         self.pacman.update(self.maze)
@@ -98,7 +140,7 @@ class Game:
                 self.score += 10
                 CHOMP_SOUND.play()
 
-        # Проверка столкновений с энергетикам��
+        # Проверка столкновений с энергетиками
         for pellet in self.power_pellets[:]:
             if self.pacman.rect.colliderect(pellet.rect):
                 self.power_pellets.remove(pellet)
@@ -110,14 +152,14 @@ class Game:
         for ghost in self.ghosts:
             if self.pacman.rect.colliderect(ghost.rect):
                 if self.pacman.powered_up:
-                    ghost.reset_position()
+                    ghost.reset_position(self.maze)
                     self.score += 200
                 else:
                     DEATH_SOUND.play()
                     self.reset_game()
                     break
 
-        # Проверка завершения уровня
+        # Проверка звершения уровня
         if not self.dots and not self.power_pellets:
             self.level += 1
             self.reset_game()
